@@ -100,7 +100,7 @@ function createDemoTransaction(body, user) {
   const merchantName = String(body.merchant || 'Unknown').trim();
   const city = String(body.city || 'Unknown').trim();
   const score = Math.min(99, Math.max(1, Math.round(amount / 1000) + (merchantName.toLowerCase().includes('unknown') ? 20 : 0)));
-  const decision = user.role === 'customer' ? 'Pending Review' : score >= 75 ? 'Blocked' : score >= 45 ? 'Pending Review' : 'Approved';
+  const decision = 'Pending Review';
   const transaction = {
     id: `TXN-${Math.floor(Math.random() * 900000) + 100000}`,
     createdAt: now.toISOString(),
@@ -115,10 +115,10 @@ function createDemoTransaction(body, user) {
     score,
     level: score >= 75 ? 'High Risk' : score >= 45 ? 'Medium Risk' : 'Low Risk',
     decision,
-    status: user.role === 'customer' ? 'Pending Approval' : decision === 'Approved' ? 'Resolved' : decision === 'Blocked' ? 'Blocked' : 'Verification Pending',
-    recommendation: user.role === 'customer' ? 'Awaiting admin approval.' : decision === 'Blocked' ? 'Block transaction and investigate' : 'Continue monitoring',
+    status: 'Pending Review',
+    recommendation: 'Awaiting admin approval.',
     confidence: Math.min(99, score + 5),
-    riskManager: user.role === 'customer' ? 'Manual Review Queue' : score >= 75 ? 'Dedicated Risk Team' : score >= 45 ? 'Manual Review Queue' : 'Behavior Monitoring Team',
+    riskManager: score >= 75 ? 'Dedicated Risk Team' : score >= 45 ? 'Manual Review Queue' : 'Behavior Monitoring Team',
     reasons: ['Demo mode transaction'],
     report: `Demo transaction for ${customerName} at ${merchantName}. Risk score ${score}%`,
     createdBy: user.email,
@@ -130,7 +130,6 @@ function createDemoTransaction(body, user) {
 
 function createDemoCase(transaction) {
   const now = new Date();
-  if (transaction.score < 45 && transaction.createdByRole !== 'customer') return null;
   const fraudCase = {
     id: `CASE-${Math.floor(Math.random() * 9000) + 1000}-${transaction.id}`,
     transactionId: transaction.id,
@@ -140,7 +139,7 @@ function createDemoCase(transaction) {
     amount: transaction.amount,
     score: transaction.score,
     priority: transaction.score >= 75 ? 'High' : 'Medium',
-    status: transaction.createdByRole === 'customer' ? 'Pending Approval' : transaction.score >= 75 ? 'Open' : 'Verification Pending',
+    status: 'Pending Review',
     createdBy: transaction.createdBy,
     createdByName: transaction.createdByName,
     createdByRole: transaction.createdByRole,
@@ -226,9 +225,10 @@ async function mockApiRequest(path, options = {}) {
     if (!txn) return mockResponse(404, { error: 'Transaction not found' });
     const status = String(body.status || 'Approved');
     txn.decision = status === 'Blocked' ? 'Blocked' : 'Approved';
+    txn.status = status === 'Blocked' ? 'Blocked' : 'Resolved';
     const fraudCase = demoState.cases.find((c) => c.transactionId === id);
     if (fraudCase) {
-      fraudCase.status = status === 'Blocked' ? 'Open' : 'Resolved';
+      fraudCase.status = status === 'Blocked' ? 'Blocked' : 'Resolved';
       fraudCase.timeline.push([`Admin action: ${status}`, new Date().toISOString()]);
     }
     saveDemoState();
@@ -781,7 +781,7 @@ function renderAdminCases() {
 
   adminCasesList.innerHTML = '';
   appState.cases.slice(0, 12).forEach((caseItem) => {
-    const statusClass = caseItem.status === 'Resolved' ? 'success' : caseItem.status === 'Pending Approval' || caseItem.status === 'Verification Pending' ? 'warn' : 'danger';
+    const statusClass = caseItem.status === 'Resolved' ? 'success' : caseItem.status === 'Pending Review' || caseItem.status === 'Verification Pending' ? 'warn' : 'danger';
     const div = document.createElement('div');
     div.className = 'case-item';
     div.innerHTML = `
@@ -934,7 +934,7 @@ function loadCases() {
 
   casesList.innerHTML = '';
   appState.cases.forEach((caseItem) => {
-    const statusClass = caseItem.status === 'Resolved' ? 'success' : caseItem.status === 'Verification Pending' ? 'warn' : 'danger';
+    const statusClass = caseItem.status === 'Resolved' ? 'success' : caseItem.status === 'Pending Review' || caseItem.status === 'Verification Pending' ? 'warn' : 'danger';
     const div = document.createElement('div');
     div.className = `case-item ${appState.selectedCase?.id === caseItem.id ? 'selected' : ''}`;
     div.innerHTML = `
@@ -997,7 +997,7 @@ function renderCaseDetail(caseItem) {
         Amount: ₹${caseItem.amount.toLocaleString('en-IN')}<br>
         Risk Score: ${caseItem.score}%<br>
         Priority: <span class="risk-badge ${priorityColor}">${caseItem.priority}</span><br>
-        Status: <span class="chip ${caseItem.status === 'Resolved' ? 'success' : caseItem.status === 'Blocked' ? 'danger' : caseItem.status === 'Open' ? 'danger' : 'warn'}">${caseItem.status}</span><br>
+        Status: <span class="chip ${caseItem.status === 'Resolved' ? 'success' : caseItem.status === 'Blocked' ? 'danger' : 'warn'}">${caseItem.status}</span><br>
         Decision: ${linkedTransaction?.decision || 'Pending Review'}<br>
         GPS: ${gpsLocation}
       </p>

@@ -216,20 +216,9 @@ function analyzeTransaction(input) {
   }
 
   score = Math.min(99, Math.max(1, score));
-  const decision = input.createdByRole === 'customer'
-    ? "Pending Review"
-    : score >= 75
-      ? "Blocked"
-      : score >= 45
-        ? "Pending Review"
-        : "Approved";
+  const decision = "Pending Review";
 
-  const recommendation =
-    input.createdByRole === 'customer'
-      ? "Hold transaction pending administrative approval."
-      : decision === "Blocked"
-        ? "Block transaction, freeze card temporarily, notify customer, and create analyst case."
-        : "Continue monitoring and complete the transaction.";
+  const recommendation = "Hold transaction pending administrative approval.";
 
   const riskManager =
     score >= 75
@@ -281,31 +270,28 @@ function analyzeTransaction(input) {
   state.transactions.unshift(transaction);
   state.transactions = state.transactions.slice(0, 100);
 
-  const createCase = input.createdByRole === 'customer' || decision !== "Blocked" || score >= 45;
-  if (createCase) {
-    state.cases.unshift({
-      id: `CASE-${crypto.randomInt(1000, 9999)}-${id}`,
-      transactionId: id,
-      customerId,
-      customerName,
-      merchant: merchantName,
-      amount,
-      score,
-      priority: score >= 75 ? "High" : score >= 45 ? "Medium" : "Low",
-      status: input.createdByRole === 'customer' ? 'Pending Approval' : score >= 75 ? "Open" : "Verification Pending",
-      createdBy: input.createdBy || customerId,
-      createdByName: input.createdByName || customerName,
-      createdByRole: input.createdByRole || 'customer',
-      timeline: [
-        ["Transaction received", now.toISOString()],
-        [`Fraud detected (${score}%)`, now.toISOString()],
-        [decision, now.toISOString()],
-        ["Customer notification prepared", now.toISOString()],
-        ["AI report generated", now.toISOString()],
-      ],
-    });
-    state.cases = state.cases.slice(0, 50);
-  }
+  state.cases.unshift({
+    id: `CASE-${crypto.randomInt(1000, 9999)}-${id}`,
+    transactionId: id,
+    customerId,
+    customerName,
+    merchant: merchantName,
+    amount,
+    score,
+    priority: score >= 75 ? "High" : score >= 45 ? "Medium" : "Low",
+    status: 'Pending Review',
+    createdBy: input.createdBy || customerId,
+    createdByName: input.createdByName || customerName,
+    createdByRole: input.createdByRole || 'customer',
+    timeline: [
+      ["Transaction received", now.toISOString()],
+      [`Fraud detected (${score}%)`, now.toISOString()],
+      [decision, now.toISOString()],
+      ["Customer notification prepared", now.toISOString()],
+      ["AI report generated", now.toISOString()],
+    ],
+  });
+  state.cases = state.cases.slice(0, 50);
 
   return transaction;
 }
@@ -323,7 +309,7 @@ function snapshot(user) {
     : allCases;
 
   const blocked = transactions.filter((txn) => txn.decision === 'Blocked').length;
-  const pending = transactions.filter((txn) => txn.decision === 'OTP Required').length;
+  const pending = transactions.filter((txn) => txn.decision === 'OTP Required' || txn.decision === 'Pending Review').length;
 
   const analysts = user && user.role === 'admin'
     ? [...users.values()]
