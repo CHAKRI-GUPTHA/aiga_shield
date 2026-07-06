@@ -100,7 +100,7 @@ function createDemoTransaction(body, user) {
   const merchantName = String(body.merchant || 'Unknown').trim();
   const city = String(body.city || 'Unknown').trim();
   const score = Math.min(99, Math.max(1, Math.round(amount / 1000) + (merchantName.toLowerCase().includes('unknown') ? 20 : 0)));
-  const decision = score >= 75 ? 'Blocked' : score >= 45 ? 'Pending Review' : 'Approved';
+  const decision = user.role === 'customer' ? 'Pending Review' : score >= 75 ? 'Blocked' : score >= 45 ? 'Pending Review' : 'Approved';
   const transaction = {
     id: `TXN-${Math.floor(Math.random() * 900000) + 100000}`,
     createdAt: now.toISOString(),
@@ -115,9 +115,10 @@ function createDemoTransaction(body, user) {
     score,
     level: score >= 75 ? 'High Risk' : score >= 45 ? 'Medium Risk' : 'Low Risk',
     decision,
-    recommendation: decision === 'Blocked' ? 'Block transaction and investigate' : 'Continue monitoring',
+    status: user.role === 'customer' ? 'Pending Approval' : decision === 'Approved' ? 'Resolved' : decision === 'Blocked' ? 'Blocked' : 'Verification Pending',
+    recommendation: user.role === 'customer' ? 'Awaiting admin approval.' : decision === 'Blocked' ? 'Block transaction and investigate' : 'Continue monitoring',
     confidence: Math.min(99, score + 5),
-    riskManager: score >= 75 ? 'Dedicated Risk Team' : score >= 45 ? 'Manual Review Queue' : 'Behavior Monitoring Team',
+    riskManager: user.role === 'customer' ? 'Manual Review Queue' : score >= 75 ? 'Dedicated Risk Team' : score >= 45 ? 'Manual Review Queue' : 'Behavior Monitoring Team',
     reasons: ['Demo mode transaction'],
     report: `Demo transaction for ${customerName} at ${merchantName}. Risk score ${score}%`,
     createdBy: user.email,
@@ -129,7 +130,7 @@ function createDemoTransaction(body, user) {
 
 function createDemoCase(transaction) {
   const now = new Date();
-  if (transaction.score < 45) return null;
+  if (transaction.score < 45 && transaction.createdByRole !== 'customer') return null;
   const fraudCase = {
     id: `CASE-${Math.floor(Math.random() * 9000) + 1000}-${transaction.id}`,
     transactionId: transaction.id,
@@ -139,7 +140,7 @@ function createDemoCase(transaction) {
     amount: transaction.amount,
     score: transaction.score,
     priority: transaction.score >= 75 ? 'High' : 'Medium',
-    status: transaction.score >= 75 ? 'Open' : 'Verification Pending',
+    status: transaction.createdByRole === 'customer' ? 'Pending Approval' : transaction.score >= 75 ? 'Open' : 'Verification Pending',
     createdBy: transaction.createdBy,
     createdByName: transaction.createdByName,
     createdByRole: transaction.createdByRole,
@@ -780,7 +781,7 @@ function renderAdminCases() {
 
   adminCasesList.innerHTML = '';
   appState.cases.slice(0, 12).forEach((caseItem) => {
-    const statusClass = caseItem.status === 'Resolved' ? 'success' : caseItem.status === 'Verification Pending' ? 'warn' : 'danger';
+    const statusClass = caseItem.status === 'Resolved' ? 'success' : caseItem.status === 'Pending Approval' || caseItem.status === 'Verification Pending' ? 'warn' : 'danger';
     const div = document.createElement('div');
     div.className = 'case-item';
     div.innerHTML = `
@@ -795,7 +796,7 @@ function renderAdminCases() {
       </div>
       <div class="case-actions">
         <button class="btn-primary small approve-case">Approve</button>
-        <button class="btn-warning small block-case">Block</button>
+        <button class="btn-danger small block-case">Block</button>
       </div>
     `;
 
@@ -843,7 +844,7 @@ function displayPaymentResult(transaction) {
 
   if (transaction.decision === 'Blocked') {
     paymentResult.classList.add('danger');
-  } else if (transaction.decision === 'OTP Required') {
+  } else if (transaction.decision === 'OTP Required' || transaction.decision === 'Pending Review') {
     paymentResult.classList.add('warn');
   } else {
     paymentResult.classList.add('success');
@@ -909,7 +910,7 @@ function renderCustomerTransactions() {
   appState.transactions.slice(0, 10).forEach((txn) => {
     const row = document.createElement('tr');
     const riskClass = txn.score >= 75 ? 'danger' : txn.score >= 45 ? 'warn' : 'success';
-    const decisionClass = txn.decision === 'Blocked' ? 'danger' : txn.decision === 'OTP Required' ? 'warn' : 'success';
+    const decisionClass = txn.decision === 'Blocked' ? 'danger' : txn.decision === 'OTP Required' || txn.decision === 'Pending Review' ? 'warn' : 'success';
 
     row.innerHTML = `
       <td>${new Date(txn.createdAt).toLocaleDateString()}</td>
@@ -1017,7 +1018,6 @@ function renderCaseDetail(caseItem) {
     </div>
 
     <div style="display: flex; gap: 1rem; margin-top: 1.5rem; flex-wrap: wrap;">
-      <button class="btn-secondary" onclick="updateCaseStatus('${caseItem.id}', 'Verified')">✓ Mark Verified</button>
       <button class="btn-warning" onclick="updateCaseStatus('${caseItem.id}', 'Approved')">Approve Transaction</button>
       <button class="btn-danger" onclick="updateCaseStatus('${caseItem.id}', 'Blocked')">Block Transaction</button>
       <button class="btn-danger" onclick="deleteCase('${caseItem.id}')">🗑️ Delete Case</button>

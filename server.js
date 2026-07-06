@@ -216,11 +216,20 @@ function analyzeTransaction(input) {
   }
 
   score = Math.min(99, Math.max(1, score));
-  const decision = score >= 75 ? "Blocked" : "Pending Review";
+  const decision = input.createdByRole === 'customer'
+    ? "Pending Review"
+    : score >= 75
+      ? "Blocked"
+      : score >= 45
+        ? "Pending Review"
+        : "Approved";
+
   const recommendation =
-    decision === "Blocked"
-      ? "Block transaction, freeze card temporarily, notify customer, and create analyst case."
-      : "Hold transaction pending administrative review and approval.";
+    input.createdByRole === 'customer'
+      ? "Hold transaction pending administrative approval."
+      : decision === "Blocked"
+        ? "Block transaction, freeze card temporarily, notify customer, and create analyst case."
+        : "Continue monitoring and complete the transaction.";
 
   const riskManager =
     score >= 75
@@ -268,10 +277,12 @@ function analyzeTransaction(input) {
   merchant.risk = Math.min(100, Math.round(25 + (merchant.blocked / merchant.total) * 70));
   state.merchants.set(merchantKey, merchant);
 
+  transaction.status = decision === 'Approved' ? 'Resolved' : decision === 'Blocked' ? 'Blocked' : 'Pending Review';
   state.transactions.unshift(transaction);
   state.transactions = state.transactions.slice(0, 100);
 
-  if (decision !== "Blocked" || score >= 45) {
+  const createCase = input.createdByRole === 'customer' || decision !== "Blocked" || score >= 45;
+  if (createCase) {
     state.cases.unshift({
       id: `CASE-${crypto.randomInt(1000, 9999)}-${id}`,
       transactionId: id,
@@ -281,7 +292,7 @@ function analyzeTransaction(input) {
       amount,
       score,
       priority: score >= 75 ? "High" : score >= 45 ? "Medium" : "Low",
-      status: score >= 75 ? "Open" : "Verification Pending",
+      status: input.createdByRole === 'customer' ? 'Pending Approval' : score >= 75 ? "Open" : "Verification Pending",
       createdBy: input.createdBy || customerId,
       createdByName: input.createdByName || customerName,
       createdByRole: input.createdByRole || 'customer',
@@ -481,7 +492,7 @@ const server = http.createServer(async (request, response) => {
       const status = body.status;
       if (status === 'Approved') {
         txn.decision = 'Approved';
-        txn.status = 'Approved';
+        txn.status = 'Resolved';
         txn.timeline = txn.timeline || [];
         txn.timeline.push(['Admin approved transaction', new Date().toISOString()]);
       } else if (status === 'Blocked') {
@@ -492,7 +503,7 @@ const server = http.createServer(async (request, response) => {
       }
       const linkedCase = state.cases.find((c) => c.transactionId === id);
       if (linkedCase) {
-        linkedCase.status = status === 'Approved' ? 'Resolved' : status === 'Blocked' ? 'Open' : linkedCase.status;
+        linkedCase.status = status === 'Approved' ? 'Resolved' : status === 'Blocked' ? 'Blocked' : linkedCase.status;
         linkedCase.timeline.push([`Admin action: ${status}`, new Date().toISOString()]);
       }
       broadcast();
