@@ -17,6 +17,264 @@ let appState = {
 };
 
 const API_BASE = '';
+const IS_GH_PAGES = window.location.hostname.endsWith('github.io') || window.location.pathname.includes('/aiga_shield');
+const DEMO_STORAGE_KEY = 'aiga_shield_demo_state';
+
+const demoState = loadDemoState();
+
+function saveDemoState() {
+  try {
+    localStorage.setItem(DEMO_STORAGE_KEY, JSON.stringify(demoState));
+  } catch (e) {
+    console.warn('Unable to save demo state:', e);
+  }
+}
+
+function loadDemoState() {
+  try {
+    const stored = localStorage.getItem(DEMO_STORAGE_KEY);
+    if (stored) {
+      return JSON.parse(stored);
+    }
+  } catch (e) {
+    console.warn('Unable to read demo state:', e);
+  }
+  return {
+    users: {
+      'admin@aiga.com': { email: 'admin@aiga.com', password: '1234', role: 'admin', name: 'Admin User' },
+      'customer@aiga.com': { email: 'customer@aiga.com', password: '1234', role: 'customer', name: 'Customer User' },
+      'analyst@aiga.com': { email: 'analyst@aiga.com', password: '1234', role: 'analyst', name: 'Analyst User' },
+    },
+    sessions: {},
+    transactions: [],
+    cases: [],
+  };
+}
+
+function getDemoAuthToken(path, options) {
+  if (options?.headers?.Authorization && options.headers.Authorization.startsWith('Bearer ')) {
+    return options.headers.Authorization.slice(7);
+  }
+  if (path.includes('?token=')) {
+    try {
+      return new URL(`http://example.com${path}`).searchParams.get('token');
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+function demoSnapshot(user) {
+  const allTransactions = demoState.transactions;
+  const allCases = demoState.cases;
+  const transactions = user.role === 'customer'
+    ? allTransactions.filter((txn) => txn.customerId === user.email)
+    : allTransactions;
+  const cases = user.role === 'customer'
+    ? allCases.filter((item) => item.customerId === user.email)
+    : allCases;
+  const blocked = transactions.filter((txn) => txn.decision === 'Blocked').length;
+  const pending = transactions.filter((txn) => txn.decision === 'OTP Required' || txn.decision === 'Pending Review').length;
+  const high = transactions.filter((txn) => txn.score >= 75).length;
+  const approved = transactions.filter((txn) => txn.decision === 'Approved').length;
+  const cities = new Map();
+  for (const txn of transactions) {
+    cities.set(txn.city, (cities.get(txn.city) || 0) + (txn.score >= 45 ? 1 : 0));
+  }
+  return {
+    stats: { total: transactions.length, blocked, pending, high, approved },
+    transactions,
+    cases,
+    analysts: user.role === 'admin' ? Object.values(demoState.users).filter((u) => u.role === 'analyst').map((u) => ({ email: u.email, name: u.name, role: u.role })) : [],
+    merchants: user.role === 'customer' ? [] : [],
+    heatmap: user.role === 'customer' ? [] : [...cities.entries()].map(([city, count]) => ({ city, count })),
+  };
+}
+
+function createDemoTransaction(body, user) {
+  const now = new Date();
+  const customerId = String(body.customerId || body.email || 'customer').trim().toLowerCase();
+  const customerName = String(body.customerName || 'Customer').trim();
+  const amount = Number(body.amount || 0);
+  const merchantName = String(body.merchant || 'Unknown').trim();
+  const city = String(body.city || 'Unknown').trim();
+  const score = Math.min(99, Math.max(1, Math.round(amount / 1000) + (merchantName.toLowerCase().includes('unknown') ? 20 : 0)));
+  const decision = score >= 75 ? 'Blocked' : score >= 45 ? 'Pending Review' : 'Approved';
+  const transaction = {
+    id: `TXN-${Math.floor(Math.random() * 900000) + 100000}`,
+    createdAt: now.toISOString(),
+    customerId,
+    customerName,
+    merchant: merchantName,
+    amount,
+    city,
+    location: body.location || { lat: 28.6139, lon: 77.209 },
+    deviceHash: body.deviceFingerprint || 'demo-device',
+    network: body.network || { online: true, timezone: 'Asia/Kolkata' },
+    score,
+    level: score >= 75 ? 'High Risk' : score >= 45 ? 'Medium Risk' : 'Low Risk',
+    decision,
+    recommendation: decision === 'Blocked' ? 'Block transaction and investigate' : 'Continue monitoring',
+    confidence: Math.min(99, score + 5),
+    riskManager: score >= 75 ? 'Dedicated Risk Team' : score >= 45 ? 'Manual Review Queue' : 'Behavior Monitoring Team',
+    reasons: ['Demo mode transaction'],
+    report: `Demo transaction for ${customerName} at ${merchantName}. Risk score ${score}%`,
+    createdBy: user.email,
+    createdByName: user.name,
+    createdByRole: user.role,
+  };
+  return transaction;
+}
+
+function createDemoCase(transaction) {
+  const now = new Date();
+  if (transaction.score < 45) return null;
+  const fraudCase = {
+    id: `CASE-${Math.floor(Math.random() * 9000) + 1000}-${transaction.id}`,
+    transactionId: transaction.id,
+    customerId: transaction.customerId,
+    customerName: transaction.customerName,
+    merchant: transaction.merchant,
+    amount: transaction.amount,
+    score: transaction.score,
+    priority: transaction.score >= 75 ? 'High' : 'Medium',
+    status: transaction.score >= 75 ? 'Open' : 'Verification Pending',
+    createdBy: transaction.createdBy,
+    createdByName: transaction.createdByName,
+    createdByRole: transaction.createdByRole,
+    timeline: [
+      ['Transaction received', now.toISOString()],
+      [`Fraud detected (${transaction.score}%)`, now.toISOString()],
+      ['AI report generated', now.toISOString()],
+    ],
+  };
+  return fraudCase;
+}
+
+function mockResponse(status, payload) {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    json: async () => payload,
+    text: async () => JSON.stringify(payload),
+    headers: { get: () => 'application/json; charset=utf-8' },
+  };
+}
+
+async function mockApiRequest(path, options = {}) {
+  const url = path.split('?')[0];
+  const method = (options.method || 'GET').toUpperCase();
+  const token = getDemoAuthToken(path, options);
+  const user = token ? demoState.sessions[token] : null;
+  const body = options.body ? JSON.parse(options.body) : {};
+
+  if (url === '/api/login' && method === 'POST') {
+    const email = String(body.email || '').trim().toLowerCase();
+    const password = String(body.password || '');
+    const found = demoState.users[email];
+    if (!found || found.password !== password) {
+      return mockResponse(401, { error: 'Invalid email or password' });
+    }
+    const newToken = `${email}-${Date.now()}`;
+    demoState.sessions[newToken] = { email: found.email, role: found.role, name: found.name };
+    saveDemoState();
+    return mockResponse(200, { token: newToken, email: found.email, role: found.role, name: found.name });
+  }
+
+  if (url === '/api/register' && method === 'POST') {
+    const email = String(body.email || '').trim().toLowerCase();
+    const name = String(body.name || '').trim();
+    const password = String(body.password || '');
+    if (!name || !email || !password) {
+      return mockResponse(400, { error: 'Name, email, and password are required' });
+    }
+    if (demoState.users[email]) {
+      return mockResponse(409, { error: 'This email is already registered' });
+    }
+    demoState.users[email] = { email, name, password, role: 'customer' };
+    saveDemoState();
+    return mockResponse(201, { message: 'Customer account created successfully' });
+  }
+
+  if (url === '/api/state' && method === 'GET') {
+    if (!user) return mockResponse(401, { error: 'Authentication required' });
+    return mockResponse(200, demoSnapshot(user));
+  }
+
+  if (url === '/api/transactions' && method === 'POST') {
+    if (!user) return mockResponse(401, { error: 'Authentication required' });
+    const payload = { ...body };
+    if (user.role === 'customer') {
+      payload.email = user.email;
+      payload.customerId = user.email;
+      payload.customerName = user.name;
+    }
+    const txn = createDemoTransaction(payload, user);
+    demoState.transactions.unshift(txn);
+    const newCase = createDemoCase(txn);
+    if (newCase) demoState.cases.unshift(newCase);
+    saveDemoState();
+    return mockResponse(201, txn);
+  }
+
+  if (url.startsWith('/api/transactions/') && method === 'POST') {
+    if (!user || !['admin', 'analyst'].includes(user.role)) return mockResponse(403, { error: 'Forbidden' });
+    const id = decodeURIComponent(url.split('/').pop());
+    const txn = demoState.transactions.find((item) => item.id === id);
+    if (!txn) return mockResponse(404, { error: 'Transaction not found' });
+    const status = String(body.status || 'Approved');
+    txn.decision = status === 'Blocked' ? 'Blocked' : 'Approved';
+    const fraudCase = demoState.cases.find((c) => c.transactionId === id);
+    if (fraudCase) {
+      fraudCase.status = status === 'Blocked' ? 'Open' : 'Resolved';
+      fraudCase.timeline.push([`Admin action: ${status}`, new Date().toISOString()]);
+    }
+    saveDemoState();
+    return mockResponse(200, txn);
+  }
+
+  if (url.startsWith('/api/transactions/') && method === 'DELETE') {
+    if (!user || !['admin', 'analyst'].includes(user.role)) return mockResponse(403, { error: 'Forbidden' });
+    const id = decodeURIComponent(url.split('/').pop());
+    const index = demoState.transactions.findIndex((txn) => txn.id === id);
+    if (index === -1) return mockResponse(404, { error: 'Transaction not found' });
+    const removed = demoState.transactions.splice(index, 1)[0];
+    demoState.cases = demoState.cases.filter((item) => item.transactionId !== id);
+    saveDemoState();
+    return mockResponse(200, { message: `Transaction ${id} deleted`, transaction: removed });
+  }
+
+  if (url.startsWith('/api/cases/') && method === 'POST') {
+    if (!user || !['admin', 'analyst'].includes(user.role)) return mockResponse(403, { error: 'Forbidden' });
+    const id = decodeURIComponent(url.split('/').pop());
+    const fraudCase = demoState.cases.find((item) => item.id === id);
+    if (!fraudCase) return mockResponse(404, { error: 'Case not found' });
+    fraudCase.status = String(body.status || 'Resolved');
+    fraudCase.timeline.push([`Case ${fraudCase.status}`, new Date().toISOString()]);
+    saveDemoState();
+    return mockResponse(200, fraudCase);
+  }
+
+  if (url.startsWith('/api/cases/') && method === 'DELETE') {
+    if (!user || !['admin', 'analyst'].includes(user.role)) return mockResponse(403, { error: 'Forbidden' });
+    const id = decodeURIComponent(url.split('/').pop());
+    const index = demoState.cases.findIndex((item) => item.id === id);
+    if (index === -1) return mockResponse(404, { error: 'Case not found' });
+    const removed = demoState.cases.splice(index, 1)[0];
+    saveDemoState();
+    return mockResponse(200, { message: `Case ${id} deleted`, case: removed });
+  }
+
+  return mockResponse(404, { error: 'Not found' });
+}
+
+async function apiRequest(path, options = {}) {
+  if (IS_GH_PAGES) {
+    return mockApiRequest(path, options);
+  }
+  return fetch(`${API_BASE}${path}`, options);
+}
 
 // ============================================================================
 // DOM Elements
@@ -92,7 +350,7 @@ async function login() {
   }
 
   try {
-    const response = await fetch(`${API_BASE}/api/login`, {
+    const response = await apiRequest('/api/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password }),
@@ -149,7 +407,7 @@ async function registerAccount() {
   }
 
   try {
-    const response = await fetch(`${API_BASE}/api/register`, {
+    const response = await apiRequest('/api/register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name, email, password }),
@@ -226,40 +484,56 @@ async function connectToLiveStream() {
   await fetchCurrentState();
 
   const tokenQuery = appState.token ? `?token=${encodeURIComponent(appState.token)}` : '';
-  appState.eventSource = new EventSource(`${API_BASE}/api/events${tokenQuery}`);
-
-  appState.eventSource.onopen = () => {
-    engineStatus.textContent = 'Connected';
-    streamState.textContent = '🟢 Connected';
-    streamState.classList.remove('warn');
-    streamState.classList.add('success');
-  };
-
-  appState.eventSource.onmessage = (event) => {
-    try {
-      const data = JSON.parse(event.data);
-      updateDashboard(data);
-    } catch (e) {
-      console.error('Failed to parse event data:', e);
-    }
-  };
-
-  appState.eventSource.onerror = () => {
-    engineStatus.textContent = 'Reconnecting...';
-    streamState.textContent = '🟡 Reconnecting...';
+  if (IS_GH_PAGES) {
+    engineStatus.textContent = 'Static demo mode';
+    streamState.textContent = '🟡 Demo';
     streamState.classList.remove('success');
     streamState.classList.add('warn');
+    appState.eventSource = {
+      close() {
+        if (demoState.eventInterval) {
+          clearInterval(demoState.eventInterval);
+          demoState.eventInterval = null;
+        }
+      },
+    };
+    demoState.eventInterval = setInterval(() => fetchCurrentState().catch(() => {}), 3000);
+  } else {
+    appState.eventSource = new EventSource(`${API_BASE}/api/events${tokenQuery}`);
 
-    setTimeout(() => {
-      connectToLiveStream().catch(() => {});
-    }, 2500);
-  };
+    appState.eventSource.onopen = () => {
+      engineStatus.textContent = 'Connected';
+      streamState.textContent = '🟢 Connected';
+      streamState.classList.remove('warn');
+      streamState.classList.add('success');
+    };
+
+    appState.eventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        updateDashboard(data);
+      } catch (e) {
+        console.error('Failed to parse event data:', e);
+      }
+    };
+
+    appState.eventSource.onerror = () => {
+      engineStatus.textContent = 'Reconnecting...';
+      streamState.textContent = '🟡 Reconnecting...';
+      streamState.classList.remove('success');
+      streamState.classList.add('warn');
+
+      setTimeout(() => {
+        connectToLiveStream().catch(() => {});
+      }, 2500);
+    };
+  }
 }
 
 async function fetchCurrentState() {
   try {
     const tokenString = appState.token ? `?token=${encodeURIComponent(appState.token)}` : '';
-    const response = await fetch(`${API_BASE}/api/state${tokenString}`);
+    const response = await apiRequest(`/api/state${tokenString}`);
     if (!response.ok) return;
     const data = await response.json();
     updateDashboard(data);
@@ -604,7 +878,7 @@ function displayPaymentResult(transaction) {
 
 async function deleteTransaction(transactionId) {
   try {
-    const response = await fetch(`${API_BASE}/api/transactions/${encodeURIComponent(transactionId)}`, {
+    const response = await apiRequest(`/api/transactions/${encodeURIComponent(transactionId)}`, {
       method: 'DELETE',
       headers: {
         Authorization: `Bearer ${appState.token}`,
@@ -760,14 +1034,14 @@ async function updateCaseStatus(caseId, status) {
 
     let response;
     if (status === 'Approved' || status === 'Blocked') {
-      response = await fetch(`${API_BASE}/api/transactions/${encodeURIComponent(fraudCase.transactionId)}`, {
+      response = await apiRequest(`/api/transactions/${encodeURIComponent(fraudCase.transactionId)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${appState.token}` },
         body: JSON.stringify({ status }),
       });
     } else {
       const resolvedStatus = status === 'Verified' ? 'Resolved' : status;
-      response = await fetch(`${API_BASE}/api/cases/${encodeURIComponent(caseId)}`, {
+      response = await apiRequest(`/api/cases/${encodeURIComponent(caseId)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${appState.token}` },
         body: JSON.stringify({ status: resolvedStatus }),
@@ -800,7 +1074,7 @@ async function deleteCase(caseId) {
   if (!confirmed) return;
 
   try {
-    const response = await fetch(`${API_BASE}/api/cases/${encodeURIComponent(caseId)}`, {
+    const response = await apiRequest(`/api/cases/${encodeURIComponent(caseId)}`, {
       method: 'DELETE',
       headers: {
         Authorization: `Bearer ${appState.token}`,
@@ -852,7 +1126,7 @@ simulateBtn.addEventListener('click', async () => {
   };
 
   try {
-    await fetch(`${API_BASE}/api/transactions`, {
+    await apiRequest('/api/transactions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -912,7 +1186,7 @@ window.addEventListener('load', () => {
       };
 
       try {
-        const response = await fetch(`${API_BASE}/api/transactions`, {
+        const response = await apiRequest('/api/transactions', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
