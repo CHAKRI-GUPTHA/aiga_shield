@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AIGA Shield – Intelligent Real-Time Card Fraud Detection</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <!-- Login Screen -->
+    <div id="loginView" class="view active">
+      <div class="login-container">
+        <div class="login-box">
+          <div class="login-header">
+            <div class="brand-icon">🛡️</div>
+            <h1>AIGA Shield</h1>
+            <p>AI-Powered Fraud Detection</p>
+          </div>
+          <div class="login-form">
+            <input type="email" id="loginEmail" placeholder="Email" />
+            <input type="password" id="loginPassword" placeholder="Password" />
+            <select id="loginRole">
+              <option value="">Select Role</option>
+              <option value="admin">Admin</option>
+              <option value="customer">Customer</option>
+              <option value="analyst">Analyst</option>
+            </select>
+            <button id="loginBtn" class="btn-primary">Login</button>
+            <p class="login-hint">
+              Demo: admin@aiga.com / customer@aiga.com / analyst@aiga.com (Password: 1234)
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">A</div>
+          <div>
+            <strong>AIGA Shield</strong>
+            <span>Fraud Command Center</span>
+          </div>
+        </div>
+
+        <nav class="nav">
+          <button class="nav-item active" data-view="admin">
+            <span>Dashboard</span>
+          </button>
+          <button class="nav-item" data-view="customer">
+            <span>Customer</span>
+          </button>
+          <button class="nav-item" data-view="cases">
+            <span>Cases</span>
+          </button>
+        </nav>
+
+        <div class="system-status">
+          <span class="pulse"></span>
+          <div>
+            <strong>Live AI Engine</strong>
+            <small>Streaming transactions</small>
+          </div>
+        </div>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Real-Time Card Fraud Detection</p>
+            <h1>Intelligent Risk Response</h1>
+          </div>
+          <div class="topbar-actions">
+            <button class="icon-button" id="simulateBtn" title="Simulate transaction">+</button>
+            <button class="primary-button" id="freezeBtn">Freeze Card</button>
+          </div>
+        </header>
+
+        <section class="view active" id="adminView">
+          <div class="stats-grid" id="statsGrid"></div>
+
+          <div class="dashboard-grid">
+            <section class="panel live-panel">
+              <div class="panel-header">
+                <div>
+                  <p class="eyebrow">Live Stream</p>
+                  <h2>Transactions</h2>
+                </div>
+                <span class="chip" id="streamState">Auto-refresh on</span>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Customer</th>
+                      <th>Merchant</th>
+                      <th>Amount</th>
+                      <th>City</th>
+                      <th>Risk</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody id="transactionsBody"></tbody>
+                </table>
+              </div>
+            </section>
+
+            <section class="panel risk-panel">
+              <div class="panel-header">
+                <div>
+                  <p class="eyebrow">AIGA Analysis</p>
+                  <h2>Selected Transaction</h2>
+                </div>
+              </div>
+              <div id="analysisPanel"></div>
+            </section>
+          </div>
+
+          <div class="dashboard-grid lower">
+            <section class="panel">
+              <div class="panel-header">
+                <div>
+                  <p class="eyebrow">Location Intelligence</p>
+                  <h2>Fraud Heat Map</h2>
+                </div>
+              </div>
+              <div class="map" id="heatMap"></div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-header">
+                <div>
+                  <p class="eyebrow">Merchant Risk</p>
+                  <h2>Risk Directory</h2>
+                </div>
+              </div>
+              <div class="merchant-list" id="merchantList"></div>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" id="customerView">
+          <div class="customer-layout">
+            <section class="customer-hero">
+              <div>
+                <p class="eyebrow">Customer Dashboard</p>
+                <h2>Welcome, Durga</h2>
+                <p>Make a payment here. AIGA Shield will collect live browser context, optional GPS, customer history, merchant risk, location signals, device fingerprint, and velocity.</p>
+              </div>
+              <div class="balance">
+                <span>Balance</span>
+                <strong>Rs 56,340</strong>
+              </div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-header">
+                <div>
+                  <p class="eyebrow">Real Payment Intake</p>
+                  <h2>Submit Transaction</h2>
+                </div>
+                <span class="chip success" id="cardState">Active</span>
+              </div>
+              <form class="payment-form" id="paymentForm">
+                <label>
+                  Customer Name
+                  <input name="customerName" value="Durga" required />
+                </label>
+                <label>
+                  Email / Customer ID
+                  <input name="email" type="email" value="durga@gmail.com" required />
+                </label>
+                <label>
+                  Merchant
+                  <input name="merchant" placeholder="Fashion Store" required />
+                </label>
+                <label>
+                  Amount
+                  <input name="amount" type="number" min="1" placeholder="25000" required />
+                </label>
+                <label>
+                  City
+                  <input name="city" placeholder="Delhi" required />
+                </label>
+                <label>
+                  Card Last 4
+                  <input name="cardLast4" maxlength="4" placeholder="4532" required />
+                </label>
+                <div class="form-actions">
+                  <button class="control" type="button" id="captureLocation">Use Live GPS</button>
+                  <button class="primary-button" type="submit">Pay Now</button>
+                  <button class="control" type="button" id="customerFreeze">Freeze Card</button>
+                </div>
+                <p class="form-note" id="locationStatus">GPS not captured yet</p>
+                <div class="last-result" id="lastPaymentResult"></div>
+              </form>
+            </section>
+
+            <section class="panel">
+              <div class="panel-header">
+                <div>
+                  <p class="eyebrow">AI Assistant</p>
+                  <h2>Why Was It Blocked?</h2>
+                </div>
+              </div>
+              <div class="assistant-box" id="assistantBox"></div>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" id="casesView">
+          <section class="panel">
+            <div class="panel-header">
+              <div>
+                <p class="eyebrow">Analyst Queue</p>
+                <h2>Investigation Cases</h2>
+              </div>
+            </div>
+            <div class="case-list" id="caseList"></div>
+          </section>
+        </section>
+      </main>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>
